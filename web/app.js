@@ -5,6 +5,9 @@ const DATA = 'data/';
 const DELHI_BBOX = [76.83, 28.40, 77.35, 28.89];
 const WALK_KMH = 4.5;
 const LEVEL_COLORS = ['#16a34a', '#f59e0b', '#dc2626'];
+const POLICE_COLOR = '#1d4ed8';
+const HOSPITAL_COLOR = '#be123c';
+const PLACES_MINZOOM = 12;
 const $ = (sel, root = document) => root.querySelector(sel);
 
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
@@ -48,20 +51,29 @@ const layersReady = mapReady.then(async () => {
     type: 'geojson',
     data: { type: 'FeatureCollection', features: places.map((p) => ({ type: 'Feature', properties: p, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })) },
   });
-  const placeColor = ['match', ['get', 'k'], 'police', '#1d4ed8', 'hospital', '#be123c', '#6d28d9'];
   map.addLayer({
-    id: 'places', type: 'circle', source: 'places', minzoom: 12,
-    filter: ['!=', ['get', 'k'], 'station'],
-    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 7], 'circle-color': placeColor, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 },
+    id: 'police', type: 'circle', source: 'places', minzoom: PLACES_MINZOOM,
+    filter: ['==', ['get', 'k'], 'police'],
+    paint: { 'circle-radius': ['interpolate', ['linear'], ['zoom'], 12, 3.5, 16, 7], 'circle-color': POLICE_COLOR, 'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5 },
   });
-  map.on('click', 'places', (e) => {
+  map.addImage('hospital-plus', hospitalIcon(), { pixelRatio: 2 });
+  map.addLayer({
+    id: 'hospitals', type: 'symbol', source: 'places', minzoom: PLACES_MINZOOM,
+    filter: ['==', ['get', 'k'], 'hospital'],
+    layout: { 'icon-image': 'hospital-plus', 'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.6, 16, 1], 'icon-allow-overlap': true },
+  });
+  const placeLayers = ['police', 'hospitals'];
+  map.on('click', placeLayers, (e) => {
     const p = e.features[0].properties;
-    const kind = { police: 'Police station', hospital: 'Hospital', station: 'Station' }[p.k];
+    const kind = { police: 'Police', hospital: 'Hospital' }[p.k];
     new maplibregl.Popup({ closeButton: false }).setLngLat(e.lngLat).setHTML(`<b>${escapeHtml(kind)}</b><br>${escapeHtml(p.n || '')}`).addTo(map);
     e.preventDefault();
   });
-  map.on('mouseenter', 'places', () => { map.getCanvas().style.cursor = 'pointer'; });
-  map.on('mouseleave', 'places', () => { map.getCanvas().style.cursor = ''; });
+  map.on('mouseenter', placeLayers, () => { map.getCanvas().style.cursor = 'pointer'; });
+  map.on('mouseleave', placeLayers, () => { map.getCanvas().style.cursor = ''; });
+  const syncKeyHint = () => { $('#map-key .hint').hidden = map.getZoom() >= PLACES_MINZOOM; };
+  map.on('zoomend', syncKeyHint);
+  syncKeyHint();
 
   map.addSource('shortest', { type: 'geojson', data: emptyFC() });
   map.addSource('safest', { type: 'geojson', data: emptyFC() });
@@ -228,6 +240,21 @@ function resultHtml(safe, short, same) {
     </div>
     ${same || state.alpha === 0 ? '' : `<label class="toggle"><input type="checkbox" id="show-shortest" ${state.showShortest ? 'checked' : ''}> Show shortest route for comparison</label>`}
   `;
+}
+
+/** Hospital marker: white "+" on a rounded square, drawn at 2x for sharp rendering. */
+function hospitalIcon() {
+  const s = 36, c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.beginPath(); g.roundRect(0, 0, s, s, 9); g.fill();
+  g.fillStyle = HOSPITAL_COLOR;
+  g.beginPath(); g.roundRect(3, 3, s - 6, s - 6, 7); g.fill();
+  g.fillStyle = '#fff';
+  g.fillRect(15, 8, 6, 20);
+  g.fillRect(8, 15, 20, 6);
+  return g.getImageData(0, 0, s, s);
 }
 
 function riskColor(r) { return r < 0.25 ? 'var(--safe)' : r < 0.45 ? 'var(--warn)' : 'var(--risk)'; }

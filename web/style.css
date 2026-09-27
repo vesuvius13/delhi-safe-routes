@@ -153,6 +153,14 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .legend i { width: 18px; height: 4px; border-radius: 2px; display: inline-block; }
 .legend i.dash { background: repeating-linear-gradient(90deg, #64748b 0 5px, transparent 5px 8px); }
+.map-key { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+.map-key span { display: inline-flex; align-items: center; gap: 6px; }
+.map-key .hint[hidden] { display: none; }
+.key-police { width: 11px; height: 11px; border-radius: 50%; background: #1d4ed8; border: 1.5px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.key-hospital { position: relative; width: 14px; height: 14px; border-radius: 4px; background: #be123c; border: 1.5px solid #fff; box-shadow: 0 0 0 1px var(--border); }
+.key-hospital::before, .key-hospital::after { content: ""; position: absolute; background: #fff; left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.key-hospital::before { width: 7px; height: 2px; }
+.key-hospital::after { width: 2px; height: 7px; }
 .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); cursor: pointer; }
 
 footer { margin-top: auto; display: flex; flex-direction: column; gap: 8px; padding-top: 6px; border-top: 1px solid var(--border); }
