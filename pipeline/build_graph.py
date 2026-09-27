@@ -4,7 +4,7 @@ Reads data/raw/ (from fetch.py), writes web/data/:
   graph.bin.gz   nodes, edges, per-band risk, explanation features, geometry
   meta.json      section table for graph.bin + model metadata
   names.json     street names for turn-by-turn directions
-  places.json    police stations, hospitals, metro/rail stations (map layer)
+  places.json    safe places: police, hospitals, metro/rail, fuel, pharmacies with hours
   boundary.json  simplified Delhi NCT outline
 """
 import argparse
@@ -51,7 +51,8 @@ class OsmReader(osmium.SimpleHandler):
     KEEP = ("highway", "footway", "service", "lit", "tunnel", "bridge", "layer", "foot",
             "access", "sidewalk", "motorroad", "area", "covered", "name", "name:en", "ref")
     POI_TAGS = ("name", "name:en", "opening_hours", "amenity", "shop", "tourism", "railway",
-                "public_transport", "station", "highway", "man_made")
+                "public_transport", "station", "subway", "network", "highway", "man_made",
+                "phone", "contact:phone")
     AREA_KEYS = ("leisure", "landuse", "natural", "amenity")
 
     def __init__(self):
@@ -346,6 +347,22 @@ def street_labels(way_tags, edge_way):
     return edge_name, edge_kind, names, [KIND_LABELS[k] for k in kinds], kind_idx
 
 
+# --------------------------------------------------------------------------- safe places
+
+def safe_place_kind(kind, tags):
+    """Places to head for if you feel unsafe: staffed, lit, usually open. None = not one."""
+    if kind in ("police", "hospital", "fuel"):
+        return kind
+    if kind == "pharmacy":
+        return "pharmacy" if tags.get("opening_hours") else None  # without hours we can't say it's open
+    if kind == "station":
+        metro = (tags.get("station") == "subway" or tags.get("subway") == "yes"
+                 or tags.get("railway") == "subway_entrance"
+                 or "metro" in (tags.get("network", "") + tags.get("name", "")).lower())
+        return "metro" if metro else "rail"
+    return None
+
+
 # --------------------------------------------------------------------------- export
 
 def main():
@@ -456,10 +473,17 @@ def main():
     (args.out / "meta.json").write_text(json.dumps(meta, indent=1))
     (args.out / "names.json").write_text(json.dumps(names, ensure_ascii=False, separators=(",", ":")))
 
-    keep_kinds = {"police": "police", "hospital": "hospital", "station": "station"}
-    places = [{"k": keep_kinds[k], "n": t.get("name:en") or t.get("name") or "",
-               "lon": round(lon, 6), "lat": round(lat, 6)}
-              for k, lon, lat, t in pois if k in keep_kinds]
+    places = []
+    for k, lon, lat, t in pois:
+        kind = safe_place_kind(k, t)
+        if kind is None:
+            continue
+        pl = {"k": kind, "n": t.get("name:en") or t.get("name") or "", "lon": round(lon, 6), "lat": round(lat, 6)}
+        if t.get("phone") or t.get("contact:phone"):
+            pl["p"] = (t.get("phone") or t.get("contact:phone")).split(";")[0].strip()
+        if t.get("opening_hours"):
+            pl["h"] = t["opening_hours"]
+        places.append(pl)
     (args.out / "places.json").write_text(json.dumps(places, ensure_ascii=False, separators=(",", ":")))
 
     boundary = load_poly(args.raw / "delhi.poly").simplify(0.0005)

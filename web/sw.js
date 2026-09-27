@@ -1,8 +1,8 @@
 /* Offline support. Network first, so app code and street data always update together;
  * the cached copy is only used when offline. Normal HTTP caching (ETags) keeps repeat
  * visits cheap. */
-const CACHE = 'delhi-safe-routes-v3';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'router.worker.js', 'nav.js', 'icon.svg', 'manifest.webmanifest',
+const CACHE = 'delhi-safe-routes-v4';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'router.worker.js', 'nav.js', 'safety.js', 'icon.svg', 'manifest.webmanifest',
   'data/meta.json', 'data/names.json', 'data/graph.bin.gz', 'data/places.json', 'data/boundary.json'];
 
 self.addEventListener('install', (e) => e.waitUntil(

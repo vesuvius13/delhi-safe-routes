@@ -17,7 +17,7 @@ const Nav = (() => {
 
   let active = false, route = null, xy = [], cum = [], watchId = null, wakeLock = null;
   let following = true, offCount = 0, rerouting = false, lastLL = null, spoken = new Set();
-  let muted = false;
+  let muted = false, lastEta = '';
   try { muted = localStorage.getItem('nav-muted') === '1'; } catch { /* storage unavailable */ }
 
   const el = (id) => document.getElementById(id);
@@ -95,6 +95,7 @@ const Nav = (() => {
   function updateBottom(remaining, weak) {
     const secs = remaining / (WALK_KMH / 3.6);
     const eta = new Date(Date.now() + secs * 1000).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+    lastEta = eta;
     el('nav-time').textContent = `${Math.max(1, Math.round(secs / 60))} min`;
     el('nav-meta').textContent = `${km(remaining)} · arrive ${eta}${weak ? ' · weak GPS' : ''}`;
   }
@@ -237,6 +238,18 @@ const Nav = (() => {
     watchId = navigator.geolocation.watchPosition(onFix, onGpsError, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   }
 
+  /** Change destination mid-walk (e.g. heading to a safe place instead) and reroute from here. */
+  async function retarget(ll, label) {
+    if (!active) return;
+    setPoint('to', ll, label, false);
+    el('nav-end').textContent = 'End';
+    if (watchId === null) {
+      watchId = navigator.geolocation.watchPosition(onFix, onGpsError, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+      keepAwake(); // released on arrival
+    }
+    if (lastLL) await reroute(lastLL);
+  }
+
   function end() {
     active = false;
     stopTracking();
@@ -247,7 +260,7 @@ const Nav = (() => {
     map.getSource('me')?.setData(emptyFC());
     map.setPadding(plannerPadding());
     map.easeTo({ bearing: 0, pitch: 0, duration: 400 });
-    if (state.last) { fitNext = true; renderRoute(state.last); }
+    requestRoute(true); // replan: the destination may have changed while navigating
   }
 
   // ------------------------------------------------------------------ controls
@@ -267,5 +280,10 @@ const Nav = (() => {
   });
   setMuted(muted);
 
-  return { start, end, get active() { return active; } };
+  return {
+    start, end, retarget,
+    get active() { return active; },
+    get position() { return lastLL; },
+    get eta() { return active && route ? lastEta : ''; },
+  };
 })();

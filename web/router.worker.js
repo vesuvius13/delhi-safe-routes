@@ -13,6 +13,7 @@ self.onmessage = async ({ data }) => {
   try {
     if (data.type === 'load') await load(data.base);
     else if (data.type === 'route') self.postMessage({ type: 'route', id: data.id, ...route(data) });
+    else if (data.type === 'distances') self.postMessage({ type: 'distances', id: data.id, ...distances(data) });
   } catch (err) {
     self.postMessage({ type: 'error', id: data.id, message: String((err && err.message) || err) });
   }
@@ -454,6 +455,20 @@ function buildSteps(parts, total, coords) {
   const end = coords[coords.length - 1];
   if (end) out.push({ type: 'arrive', turn: 0, text: 'Arrive at your destination', along: total, length: 0, lon: end[0], lat: end[1] });
   return out;
+}
+
+/** Walking distance (metres, on the safety-weighted route) from one point to each target; null if unreachable. */
+function distances({ from, targets, alpha, band }) {
+  if (!G) return { error: 'The map data is still loading.' };
+  const s = snap(from[0], from[1]);
+  if (!s) return { error: 'You are too far from any walkable street in Delhi.' };
+  return {
+    distances: targets.map(([lon, lat]) => {
+      const t = snap(lon, lat, 200);
+      const res = t && search(s, t, alpha, band);
+      return res ? Math.round(res.pieces.reduce((d, [, a, b]) => d + Math.abs(b - a), 0) + t.d) : null;
+    }),
+  };
 }
 
 function route({ from, to, alpha, band }) {

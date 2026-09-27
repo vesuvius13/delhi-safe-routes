@@ -102,7 +102,8 @@ map.on('click', (e) => {
 });
 
 const markers = {};
-function setPoint(which, lonlat, label) {
+/** Set start ('from') or destination ('to'); replans unless replan is false (navigation replans itself). */
+function setPoint(which, lonlat, label, replan = true) {
   state[which] = lonlat;
   $(`#${which}`).value = label || '';
   if (!markers[which]) {
@@ -120,13 +121,13 @@ function setPoint(which, lonlat, label) {
   } else {
     markers[which].setLngLat(lonlat);
   }
-  requestRoute(true);
+  if (replan) requestRoute(true);
 }
 
 // ------------------------------------------------------------------ worker
 
 const worker = new Worker('router.worker.js');
-let ready = false, reqId = 0, fitNext = false;
+let ready = false, reqId = 0, fitNext = false, startAfterRoute = false;
 const pending = new Map(); // id -> resolve, for routeOnce()
 worker.postMessage({ type: 'load', base: new URL(DATA, location.href).href });
 worker.onmessage = ({ data }) => {
@@ -168,6 +169,15 @@ function routeOnce(from) {
   });
 }
 
+/** Walking distances from one point to many (used to rank safe places). */
+function distancesOnce(from, targets) {
+  return new Promise((resolve) => {
+    const id = ++reqId;
+    pending.set(id, resolve);
+    worker.postMessage({ type: 'distances', id, from, targets, alpha: state.alpha, band: state.band });
+  });
+}
+
 function showStatus(msg, isError = false) {
   const el = $('#status');
   el.hidden = !msg;
@@ -197,6 +207,7 @@ async function renderRoute(res) {
   $('#result').hidden = false;
   $('#show-shortest')?.addEventListener('change', (e) => { state.showShortest = e.target.checked; renderRoute(state.last); });
   $('#start-nav').onclick = () => Nav.start(state.last.safest);
+  if (startAfterRoute) { startAfterRoute = false; Nav.start(safe); }
   $('#result .steps ol').onclick = (e) => {
     const li = e.target.closest('li[data-i]');
     const st = li && safe.steps[+li.dataset.i];

@@ -12,6 +12,8 @@ Routing runs **entirely in the browser**: the app downloads a 5.6 MB street grap
 - A **Shortest ↔ Safest** slider sets how much of a detour you'll accept.
 - Colours the route by exposure (green, amber, red) and shows police stations and hospitals on the map.
 - **Turn-by-turn navigation**: tap **Start** to follow the route by GPS. It shows the next turn with distance and a "then" preview, gives voice prompts (can be muted), keeps the screen on, and reroutes from where you are if you leave the route. A step-by-step directions list is also available before you start.
+- **Safe places near me**: the nearest police, hospitals and places open right now (metro stations while running, rail stations, fuel stations, pharmacies with listed hours), ranked by walking distance, with **Go** (starts navigation) and **Call**.
+- **Share my location**: sends a Google Maps link with your position to a contact via WhatsApp, SMS or the share menu. During navigation it adds your destination and ETA.
 - One-tap emergency numbers: 112, 1091 (Delhi Police women helpline), 181.
 
 ## How it works
@@ -83,7 +85,8 @@ Then open http://localhost:8000.
 - [ ] **Street-imagery lighting and activity** from Mapillary/KartaView with a CV model, to replace road-type priors
 - [ ] Night-lights raster (VIIRS) as a coarse lighting layer
 - [ ] "Was this route OK?" feedback, and calibrating weights against Safetipin audit data
-- [ ] Nearest safe place right now (police, hospital, 24×7 pharmacy, fuel station) and live location sharing
+- [x] Nearest safe place right now and one-tap location sharing
+- [ ] Live location tracking (needs a small backend)
 - [ ] Hindi UI
 
 ## Data and credits
