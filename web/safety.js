@@ -200,7 +200,7 @@ const Safety = (() => {
     const [lon, lat] = pos.ll;
     const link = `https://www.google.com/maps/search/?api=1&query=${lat.toFixed(6)},${lon.toFixed(6)}`;
     const time = new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
-    let text = `This is my location at ${time}${pos.acc ? ` (accurate to about ${pos.acc} m)` : ''}: ${link}`;
+    let text = `${DEMO ? '[Demo, simulated location] ' : ''}This is my location at ${time}${pos.acc ? ` (accurate to about ${pos.acc} m)` : ''}: ${link}`;
     const dest = document.getElementById('to').value;
     if (typeof Nav !== 'undefined' && Nav.active && Nav.eta) {
       text += `\nI'm walking${dest && dest !== 'Dropped pin' ? ` to ${dest}` : ''} and expect to arrive around ${Nav.eta}.`;

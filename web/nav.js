@@ -284,6 +284,7 @@ const Nav = (() => {
     start, end, retarget,
     get active() { return active; },
     get position() { return lastLL; },
+    get coords() { return active && route ? route.coords : null; },
     get eta() { return active && route ? lastEta : ''; },
   };
 })();

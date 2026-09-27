@@ -37,6 +37,7 @@ browser:  router.worker.js  A* routing, turn instructions, walking distances
           app.js            MapLibre map, planner, route explanation
           nav.js            GPS turn-by-turn navigation, voice, rerouting
           safety.js         safe places near me, share my location
+          demo.js           simulated GPS walk, only with ?demo
           sw.js             offline support (network first)
 ```
 
@@ -75,6 +76,17 @@ Mapillary detects street lights in its street-level photos. With a free client t
 3. CI: `gh secret set MAPILLARY_TOKEN < .mapillary_token`.
 
 Coverage in Delhi is thin for now (Sept 2026): photos cover about 12% of main roads and 2% of other streets, mostly central Delhi. The weekly rebuild picks up new photos automatically. **Capturing your own walking routes with the Mapillary app, including at night, directly improves this map.**
+
+## Demo mode (for recording videos away from Delhi)
+
+Open the app with `?demo`: https://vesuvius13.github.io/delhi-safe-routes/?demo
+
+- You "are" at the start of whatever route you plan, anywhere in Delhi.
+- **Start** walks you along the route at 5× walking speed, with turn prompts, voice and rerouting. `?demo=10` walks at 10×.
+- **Safe places** and **Share** use the simulated position. Shared messages are marked as a demo.
+- A yellow **DEMO · simulated location** badge stays on screen, so recordings can't be mistaken for a real walk.
+
+Without `?demo`, nothing changes: the app uses real GPS.
 
 ## Deploy for free (GitHub Pages)
 
