@@ -60,16 +60,20 @@ This measures the **street environment**, not crime. Delhi Police doesn't publis
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python pipeline/fetch.py        # ~27 MB download
-.venv/bin/python pipeline/fetch_mapillary.py  # optional, needs a token (see below); ~1 min
+.venv/bin/python pipeline/fetch_mapillary.py  # needs a token in .mapillary_token (see below); ~1 min
 .venv/bin/python pipeline/build_graph.py  # ~10 s
 python3 -m http.server 8000 --directory web
 ```
 
 Then open http://localhost:8000.
 
-### Mapillary street lights (optional)
+### Mapillary street lights
 
-Mapillary detects street lights in its street-level photos. With a free client token, the build uses those detections: a light seen within 25 m makes a segment count as lit, and a segment photographed densely with no light seen gets a lower lighting estimate. Segments without photos are left alone. Missing detections only count as evidence where photos exist.
+Mapillary detects street lights in its street-level photos, and the build uses those detections: a light seen within 25 m makes a segment count as lit, and a segment photographed densely with no light seen gets a lower lighting estimate. Segments without photos are left alone. Missing detections only count as evidence where photos exist.
+
+**Already set up for this repo:** the token is stored as the `MAPILLARY_TOKEN` Actions secret, so every deploy and weekly rebuild includes Mapillary data.
+
+To use it in your own copy (optional; without a token the build skips Mapillary and uses OpenStreetMap alone):
 
 1. Register an app at https://www.mapillary.com/dashboard/developers (Read access) and copy the **Client Token**.
 2. Local builds: `pbpaste > .mapillary_token` (git-ignored).
@@ -88,11 +92,9 @@ Open the app with `?demo`: https://vesuvius13.github.io/delhi-safe-routes/?demo
 
 Without `?demo`, nothing changes: the app uses real GPS.
 
-## Deploy for free (GitHub Pages)
+## Hosting and deployment
 
-1. Push this folder to a **public** GitHub repo (Actions minutes are free for public repos).
-2. Repo **Settings → Pages → Source: GitHub Actions**.
-3. The workflow in `.github/workflows/deploy.yml` builds the graph and deploys on every push to `main`, and again every Monday from fresh OSM data.
+**Already set up for this repo.** The app is live at https://vesuvius13.github.io/delhi-safe-routes/. The workflow in `.github/workflows/deploy.yml` rebuilds the graph and deploys on every push to `main`, and again every Monday at 08:00 IST from fresh OpenStreetMap and Mapillary data. It runs at no cost:
 
 | Piece | Service | Cost |
 |---|---|---|
@@ -100,7 +102,14 @@ Without `?demo`, nothing changes: the app uses real GPS.
 | Weekly data rebuild | GitHub Actions | Free for public repos |
 | Basemap tiles | [OpenFreeMap](https://openfreemap.org) | Free, no key |
 | Place search | [Photon](https://photon.komoot.io) (komoot) | Free, fair use |
-| Domain (optional) | any registrar | about ₹800–1,000/year |
+| Custom domain | not used | optional, about ₹800–1,000/year from any registrar |
+
+### Run your own copy (for example, for another city)
+
+1. Fork or push this folder to a **public** GitHub repo (Actions minutes are free for public repos).
+2. In the repo, go to **Settings → Pages → Source: GitHub Actions**.
+3. Optionally add a `MAPILLARY_TOKEN` secret (see [Mapillary street lights](#mapillary-street-lights)).
+4. For another city, change the extract URLs in `pipeline/fetch.py` and the projection centre in `pipeline/build_graph.py`. Delhi-specific pieces in the app (search area, emergency numbers, metro hours) live in `web/app.js`, `web/index.html` and `web/safety.js`.
 
 ## Known limitations
 
