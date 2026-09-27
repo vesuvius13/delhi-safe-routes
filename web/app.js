@@ -26,8 +26,10 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
 map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right');
-if (innerWidth > 720) map.setPadding({ left: 412, top: 20, right: 20, bottom: 20 });
-else map.setPadding({ bottom: innerHeight * 0.5, top: 20, left: 10, right: 10 });
+const plannerPadding = () => (innerWidth > 720
+  ? { left: 412, top: 20, right: 20, bottom: 20 }
+  : { bottom: innerHeight * 0.5, top: 20, left: 10, right: 10 });
+map.setPadding(plannerPadding());
 
 const mapReady = new Promise((resolve) => map.on('load', resolve));
 
@@ -83,10 +85,18 @@ const layersReady = mapReady.then(async () => {
     paint: { 'line-color': dark ? '#0b1210' : '#ffffff', 'line-width': 9 } });
   map.addLayer({ id: 'safest', type: 'line', source: 'safest', layout: { 'line-cap': 'round', 'line-join': 'round' },
     paint: { 'line-color': ['match', ['get', 'level'], 0, LEVEL_COLORS[0], 1, LEVEL_COLORS[1], LEVEL_COLORS[2]], 'line-width': 5.5 } });
+
+  // Navigation: the part already walked, and where you are
+  map.addSource('traveled', { type: 'geojson', data: emptyFC() });
+  map.addLayer({ id: 'traveled', type: 'line', source: 'traveled', layout: { 'line-cap': 'round', 'line-join': 'round' },
+    paint: { 'line-color': dark ? '#475569' : '#94a3b8', 'line-width': 5.5 } });
+  map.addSource('me', { type: 'geojson', data: emptyFC() });
+  map.addLayer({ id: 'me-halo', type: 'circle', source: 'me', paint: { 'circle-radius': 18, 'circle-color': '#2563eb', 'circle-opacity': 0.18 } });
+  map.addLayer({ id: 'me', type: 'circle', source: 'me', paint: { 'circle-radius': 8, 'circle-color': '#2563eb', 'circle-stroke-color': '#fff', 'circle-stroke-width': 3 } });
 });
 
 map.on('click', (e) => {
-  if (e.defaultPrevented) return;
+  if (e.defaultPrevented || (typeof Nav !== 'undefined' && Nav.active)) return;
   const pt = [+e.lngLat.lng.toFixed(6), +e.lngLat.lat.toFixed(6)];
   setPoint(state.from ? 'to' : 'from', pt, 'Dropped pin');
 });
@@ -117,6 +127,7 @@ function setPoint(which, lonlat, label) {
 
 const worker = new Worker('router.worker.js');
 let ready = false, reqId = 0, fitNext = false;
+const pending = new Map(); // id -> resolve, for routeOnce()
 worker.postMessage({ type: 'load', base: new URL(DATA, location.href).href });
 worker.onmessage = ({ data }) => {
   if (data.type === 'progress') {
@@ -129,6 +140,9 @@ worker.onmessage = ({ data }) => {
     $('#data-info').textContent = `Street data: © OpenStreetMap contributors, updated ${osm}. ${data.edges.toLocaleString('en-IN')} street segments.`;
     showStatus(state.from ? '' : 'Tap the map or search to set a start point.');
     requestRoute(true);
+  } else if (pending.has(data.id)) {
+    pending.get(data.id)(data.type === 'error' ? { error: data.message } : data);
+    pending.delete(data.id);
   } else if (data.type === 'route') {
     if (data.id !== reqId) return; // a newer request is in flight
     if (data.error) { showStatus(data.error, true); clearRoute(); return; }
@@ -145,6 +159,15 @@ function requestRoute(fit = false) {
   worker.postMessage({ type: 'route', id: ++reqId, from: state.from, to: state.to, alpha: state.alpha, band: state.band });
 }
 
+/** One-off route request (used by navigation to reroute); resolves with the worker's reply. */
+function routeOnce(from) {
+  return new Promise((resolve) => {
+    const id = ++reqId;
+    pending.set(id, resolve);
+    worker.postMessage({ type: 'route', id, from, to: state.to, alpha: state.alpha, band: state.band });
+  });
+}
+
 function showStatus(msg, isError = false) {
   const el = $('#status');
   el.hidden = !msg;
@@ -156,6 +179,10 @@ function showStatus(msg, isError = false) {
 // ------------------------------------------------------------------ rendering
 
 const emptyFC = () => ({ type: 'FeatureCollection', features: [] });
+const segmentsFC = (route) => ({
+  type: 'FeatureCollection',
+  features: route.segments.map((s) => ({ type: 'Feature', properties: { level: s.level }, geometry: { type: 'LineString', coordinates: s.coords } })),
+});
 
 function clearRoute() {
   $('#result').hidden = true;
@@ -169,13 +196,16 @@ async function renderRoute(res) {
   $('#result').innerHTML = resultHtml(safe, short, same);
   $('#result').hidden = false;
   $('#show-shortest')?.addEventListener('change', (e) => { state.showShortest = e.target.checked; renderRoute(state.last); });
+  $('#start-nav').onclick = () => Nav.start(state.last.safest);
+  $('#result .steps ol').onclick = (e) => {
+    const li = e.target.closest('li[data-i]');
+    const st = li && safe.steps[+li.dataset.i];
+    if (st) map.flyTo({ center: [st.lon, st.lat], zoom: 17.5 });
+  };
 
   await layersReady; // the directions above don't need to wait for the basemap
   if (state.last !== res) return;
-  map.getSource('safest').setData({
-    type: 'FeatureCollection',
-    features: safe.segments.map((s) => ({ type: 'Feature', properties: { level: s.level }, geometry: { type: 'LineString', coordinates: s.coords } })),
-  });
+  map.getSource('safest').setData(segmentsFC(safe));
   map.getSource('shortest').setData(same || !state.showShortest || state.alpha === 0 ? emptyFC()
     : { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: short.coords } });
 
@@ -225,7 +255,10 @@ function resultHtml(safe, short, same) {
   return `
     <div>
       <div class="sub-h">${title} · ${escapeHtml(band.label)}</div>
-      <div class="summary"><span class="big">${km(s.distance)}</span><span class="mins">${mins(s.distance)} walk</span></div>
+      <div class="summary-row">
+        <div class="summary"><span class="big">${km(s.distance)}</span><span class="mins">${mins(s.distance)} walk</span></div>
+        <button id="start-nav" class="start-btn" type="button">${ICONS.start}Start</button>
+      </div>
       ${compare}
     </div>
     <div class="score"><span class="num" style="color:${riskColor(s.risk)}">${score(s)}</span>
@@ -239,7 +272,28 @@ function resultHtml(safe, short, same) {
       ${same || state.alpha === 0 ? '' : '<span><i class="dash"></i>Shortest</span>'}
     </div>
     ${same || state.alpha === 0 ? '' : `<label class="toggle"><input type="checkbox" id="show-shortest" ${state.showShortest ? 'checked' : ''}> Show shortest route for comparison</label>`}
+    <details class="steps">
+      <summary>Directions · ${safe.steps.length - 1} step${safe.steps.length === 2 ? '' : 's'}</summary>
+      <ol>${safe.steps.map((st, i) => `<li data-i="${i}">${maneuverIcon(st)}<span>${escapeHtml(st.text)}${st.length ? `<small>${km(st.length)}</small>` : ''}</span></li>`).join('')}</ol>
+    </details>
   `;
+}
+
+const ICONS = {
+  start: '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M12 2 4.5 20.3l.7.7L12 18l6.8 3 .7-.7z" fill="currentColor"/></svg>',
+  arrow: '<path d="M24 5 38 21h-9v22h-10V21h-9z" fill="currentColor"/>',
+  uturn: '<path d="M14 43V19a10 10 0 0 1 20 0v6h7l-12 13-12-13h7v-6a2 2 0 0 0-4 0v24z" fill="currentColor"/>',
+  arrive: '<path d="M24 4a13 13 0 0 0-13 13c0 10 13 27 13 27s13-17 13-27A13 13 0 0 0 24 4zm0 18a5 5 0 1 1 0-10 5 5 0 0 1 0 10z" fill="currentColor"/>',
+  cross: '<g fill="currentColor"><rect x="6" y="8" width="36" height="5" rx="1"/><rect x="6" y="18" width="36" height="5" rx="1"/><rect x="6" y="28" width="36" height="5" rx="1"/><rect x="6" y="38" width="36" height="5" rx="1"/></g>',
+};
+
+/** Icon for a turn-by-turn step: an arrow rotated by the turn angle (turn-arounds and arrival get their own). */
+function maneuverIcon(step, size = 22) {
+  const svg = (inner, rot = 0) => `<svg class="mv" viewBox="0 0 48 48" width="${size}" height="${size}" aria-hidden="true" style="transform:rotate(${rot}deg)">${inner}</svg>`;
+  if (step.type === 'arrive') return svg(ICONS.arrive);
+  if (step.type === 'cross') return svg(ICONS.cross);
+  if (step.type !== 'depart' && Math.abs(step.turn) >= 170) return svg(ICONS.uturn);
+  return svg(ICONS.arrow, step.type === 'depart' ? 0 : Math.max(-135, Math.min(135, step.turn)));
 }
 
 /** Hospital marker: white "+" on a rounded square, drawn at 2x for sharp rendering. */

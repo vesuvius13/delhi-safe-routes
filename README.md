@@ -11,6 +11,7 @@ Routing runs **entirely in the browser**: the app downloads a 5.6 MB street grap
 - Explains the route: share on main roads, share likely to be well lit, open places passed, nearby police, and warnings (parks, industrial land, underpasses, long dark stretches).
 - A **Shortest ↔ Safest** slider sets how much of a detour you'll accept.
 - Colours the route by exposure (green, amber, red) and shows police stations and hospitals on the map.
+- **Turn-by-turn navigation**: tap **Start** to follow the route by GPS. It shows the next turn with distance and a "then" preview, gives voice prompts (can be muted), keeps the screen on, and reroutes from where you are if you leave the route. A step-by-step directions list is also available before you start.
 - One-tap emergency numbers: 112, 1091 (Delhi Police women helpline), 181.
 
 ## How it works
@@ -27,7 +28,7 @@ pipeline/build_graph.py ── safety_model.py (features → risk per time band)
 web/data/graph.bin.gz  (≈256k junctions, 355k segments, 23,000 km of streets)
         │
         ▼
-browser: router.worker.js (A*) + app.js (MapLibre UI)
+browser: router.worker.js (A* + turn instructions) + app.js (MapLibre UI) + nav.js (GPS navigation)
 ```
 
 **Edge cost** = `length × (1 + α × 4 × risk[band])`. α = 0 gives the shortest path; α = 1 accepts up to 5× the length to avoid the riskiest segments. The A* heuristic is straight-line distance, which stays admissible because cost ≥ length. A 40 km cross-city route takes about 50 ms.
@@ -72,6 +73,7 @@ Then open http://localhost:8000.
 ## Known limitations
 
 - **OSM coverage is uneven.** Only about 2,100 segments are tagged `lit=yes` and about 1,500 street lamps are mapped, so lighting is mostly inferred from road type. Opening hours are usually defaulted by category. Outer Delhi (Narela, Bawana, Najafgarh) has fewer mapped shops, so scores there lean on road type.
+- Only about 14% of street segments are named in OSM (most colony lanes aren't), so directions often say "the street" or "the footpath" instead of a name.
 - Walking in both directions is assumed. Gated colonies that close at night aren't known unless tagged `access=private`.
 - The weights are priors, not yet calibrated against ground truth.
 - Search depends on the public Photon API. If it's down, tapping the map still works.

@@ -1,7 +1,7 @@
 /* Offline support: serve the app shell and street data from cache, refresh in the background. */
-const CACHE = 'delhi-safe-routes-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'router.worker.js', 'icon.svg', 'manifest.webmanifest',
-  'data/meta.json', 'data/graph.bin.gz', 'data/places.json', 'data/boundary.json'];
+const CACHE = 'delhi-safe-routes-v2';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'router.worker.js', 'nav.js', 'icon.svg', 'manifest.webmanifest',
+  'data/meta.json', 'data/names.json', 'data/graph.bin.gz', 'data/places.json', 'data/boundary.json'];
 
 self.addEventListener('install', (e) => e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL))));
 self.addEventListener('activate', (e) => e.waitUntil(

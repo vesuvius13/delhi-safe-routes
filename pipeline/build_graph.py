@@ -3,6 +3,7 @@
 Reads data/raw/ (from fetch.py), writes web/data/:
   graph.bin.gz   nodes, edges, per-band risk, explanation features, geometry
   meta.json      section table for graph.bin + model metadata
+  names.json     street names for turn-by-turn directions
   places.json    police stations, hospitals, metro/rail stations (map layer)
   boundary.json  simplified Delhi NCT outline
 """
@@ -48,7 +49,7 @@ def project_geom(g):
 class OsmReader(osmium.SimpleHandler):
     """One pass over the PBF: walkable ways, POIs (nodes and building centroids), land-use areas."""
     KEEP = ("highway", "footway", "service", "lit", "tunnel", "bridge", "layer", "foot",
-            "access", "sidewalk", "motorroad", "area", "covered")
+            "access", "sidewalk", "motorroad", "area", "covered", "name", "name:en", "ref")
     POI_TAGS = ("name", "name:en", "opening_hours", "amenity", "shop", "tourism", "railway",
                 "public_transport", "station", "highway", "man_made")
     AREA_KEYS = ("leisure", "landuse", "natural", "amenity")
@@ -301,6 +302,50 @@ def edge_features(lines, lengths, way_tags, edge_way, pois, areas):
     return f, flags
 
 
+# --------------------------------------------------------------------------- turn-by-turn labels
+
+# How an unnamed segment is described in directions ("Turn left onto the footpath").
+KIND_LABELS = {
+    "road": "the road", "street": "the street", "service": "the service road", "lane": "the lane",
+    "pedestrian": "the pedestrian street", "footpath": "the footpath", "crossing": "the crossing",
+    "path": "the path", "track": "the track", "steps": "the steps", "corridor": "the corridor",
+    "cycleway": "the cycle path",
+}
+
+
+def street_kind(tags: dict) -> str:
+    hw = tags["highway"]
+    if hw == "footway":
+        return "crossing" if tags.get("footway") == "crossing" else "footpath"
+    if hw == "service":
+        return "lane" if tags.get("service") == "alley" else "service"
+    if hw in ("residential", "living_street"):
+        return "street"
+    if hw in ("path", "bridleway"):
+        return "path"
+    return hw if hw in KIND_LABELS else "road"
+
+
+def street_labels(way_tags, edge_way):
+    """Per-edge name index and kind index, plus the lookup tables."""
+    kinds = list(KIND_LABELS)
+    kind_idx = {k: i for i, k in enumerate(kinds)}
+    names, name_idx = [""], {"": 0}
+    edge_name = np.zeros(len(edge_way), np.uint32)
+    edge_kind = np.zeros(len(edge_way), np.uint8)
+    for i, wi in enumerate(edge_way):
+        t = way_tags[wi]
+        nm = (t.get("name:en") or t.get("name") or t.get("ref") or "").strip()
+        if nm not in name_idx:
+            name_idx[nm] = len(names)
+            names.append(nm)
+        edge_name[i] = name_idx[nm]
+        edge_kind[i] = kind_idx[street_kind(t)]
+    if len(names) < 65536:
+        edge_name = edge_name.astype(np.uint16)
+    return edge_name, edge_kind, names, [KIND_LABELS[k] for k in kinds], kind_idx
+
+
 # --------------------------------------------------------------------------- export
 
 def main():
@@ -364,6 +409,9 @@ def main():
     geom_lon = geom[:, 0] / KX + LON0
     geom_lat = geom[:, 1] / KY + LAT0
 
+    edge_name, edge_kind, names, kind_labels, kind_idx = street_labels([t for _, t in rd.ways], edge_way)
+    log(f"  {len(names) - 1} street names; {(edge_name > 0).mean() * 100:.0f}% of segments named")
+
     micro = lambda a: np.round(np.asarray(a) * 1e6).astype(np.int32)  # noqa: E731
     sections = {
         "nodes": np.c_[micro(node_lon), micro(node_lat)].ravel(),
@@ -374,6 +422,8 @@ def main():
         "edge_risk": np.round(risk * 255).astype(np.uint8).ravel(),
         "edge_light": np.round(feats["light"] * 255).astype(np.uint8),
         "edge_open": np.minimum(np.round(feats["open_count"] * 10), 255).astype(np.uint8).ravel(),
+        "edge_name": edge_name,
+        "edge_kind": edge_kind,
         "geom_off": geom_off,
         "geom": np.c_[micro(geom_lon), micro(geom_lat)].ravel(),
     }
@@ -398,10 +448,13 @@ def main():
         "risk_multiplier": sm.RISK_MULTIPLIER,
         "flags": sm.FLAGS,
         "open_count_scale": 10,
+        "kind_labels": kind_labels,
+        "crossing_kind": kind_idx["crossing"],
         "sections": table,
         "bytes": len(blob),
     }
     (args.out / "meta.json").write_text(json.dumps(meta, indent=1))
+    (args.out / "names.json").write_text(json.dumps(names, ensure_ascii=False, separators=(",", ":")))
 
     keep_kinds = {"police": "police", "hospital": "hospital", "station": "station"}
     places = [{"k": keep_kinds[k], "n": t.get("name:en") or t.get("name") or "",

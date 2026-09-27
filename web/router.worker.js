@@ -49,7 +49,10 @@ async function gunzip(bytes) {
 const CELL = 150; // metres, snapping grid
 
 async function load(base) {
-  const meta = await (await fetch(base + 'meta.json')).json();
+  const [meta, names] = await Promise.all([
+    fetch(base + 'meta.json').then((r) => r.json()),
+    fetch(base + 'names.json').then((r) => r.json()),
+  ]);
   const raw = await fetchBytes(base + 'graph.bin.gz', (got, total) =>
     self.postMessage({ type: 'progress', got, total }));
   const buf = await gunzip(raw);
@@ -105,7 +108,7 @@ async function load(base) {
   const cellEdges = new Uint32Array(cellCount[W * H]);
   for (let e = 0; e < E; e++) forCells(e, (c) => { cellEdges[cellFill[c]++] = e; });
 
-  G = { meta, S, N, E, x, y, gx, gy, off, adj, grid: { minX, minY, W, H, cellCount, cellEdges },
+  G = { meta, names, S, N, E, x, y, gx, gy, off, adj, grid: { minX, minY, W, H, cellCount, cellEdges },
         B: meta.bands.length, K: meta.risk_multiplier, flags: meta.flags };
   self.postMessage({ type: 'ready', nodes: N, edges: E, built: meta.built, osm: meta.osm_timestamp });
 }
@@ -298,10 +301,12 @@ function describe(res, band) {
                underpasses: 0, footbridges: 0, darkestStretch: 0 };
   const coords = [];
   const segments = [];
+  const parts = [];
   let dark = 0;
   for (const [e, a, b] of res.pieces) {
     const L = Math.abs(b - a);
     if (L < 0.01) continue;
+    const along = st.distance;
     const r = S.edge_risk[e * B + band] / 255;
     const light = S.edge_light[e] / 255;
     st.distance += L;
@@ -328,10 +333,127 @@ function describe(res, band) {
     if (last && last.level === level) last.coords.push(...pts.slice(1));
     else segments.push({ level, coords: last ? [last.coords[last.coords.length - 1], ...pts.slice(1)] : pts });
     coords.push(...(coords.length ? pts.slice(1) : pts));
+    parts.push({ e, L, along, pts });
   }
   st.risk = st.distance ? st.riskSum / st.distance : 0;
   delete st.riskSum;
-  return { stats: st, coords, segments, settled: res.settled };
+  return { stats: st, coords, segments, steps: buildSteps(parts, st.distance, coords), settled: res.settled };
+}
+
+// ------------------------------------------------------------------ turn-by-turn
+
+const CARDINALS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+const MIN_STEP = 20;      // metres; shorter connectors fold into the next instruction
+const SAME_ROAD_TURN = 40; // unnamed segments of the same kind merge if the turn is gentler than this
+const STRAIGHT_NAMED_MIN = 60; // a straight-on name change shorter than this is not announced
+
+/** Travel bearing (degrees clockwise from north) over the first or last `dist` metres of pts. */
+function bearingAlong(pts, atStart, dist = 15) {
+  const P = G.meta.projection;
+  const xy = (p) => [(p[0] - P.lon0) * P.kx, (p[1] - P.lat0) * P.ky];
+  const n = pts.length;
+  const idx = (i) => (atStart ? i : n - 1 - i);
+  const a = xy(pts[idx(0)]);
+  let b = a, prev = a, acc = 0;
+  for (let i = 1; i < n; i++) {
+    const q = xy(pts[idx(i)]);
+    acc += Math.hypot(q[0] - prev[0], q[1] - prev[1]);
+    prev = b = q;
+    if (acc >= dist) break;
+  }
+  const dx = atStart ? b[0] - a[0] : a[0] - b[0];
+  const dy = atStart ? b[1] - a[1] : a[1] - b[1];
+  return (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+}
+const turnAngle = (from, to) => ((to - from + 540) % 360) - 180; // positive = right
+
+function partLabel(e) {
+  const { S, flags: F, meta } = G;
+  const name = G.names[S.edge_name[e]] || '';
+  const kind = S.edge_kind[e];
+  const crossing = kind === meta.crossing_kind;
+  if (name) return { name, label: name, crossing };
+  if ((S.edge_flags[e] >> F.footbridge) & 1) return { name, label: 'the foot overbridge', crossing };
+  if ((S.edge_flags[e] >> F.underpass) & 1) return { name, label: 'the underpass', crossing };
+  return { name, label: meta.kind_labels[kind], crossing };
+}
+
+function turnPhrase(turn) {
+  const a = Math.abs(turn), dir = turn > 0 ? 'right' : 'left';
+  if (a < 20) return 'Continue';
+  if (a < 55) return `Slight ${dir}`;
+  if (a < 135) return `Turn ${dir}`;
+  if (a < 170) return `Sharp ${dir}`;
+  return 'Turn around';
+}
+
+/** Group route parts into instructions: a new step starts where the street changes or the path turns. */
+function buildSteps(parts, total, coords) {
+  const steps = [];
+  for (const p of parts) {
+    const lab = partLabel(p.e);
+    const cur = steps[steps.length - 1];
+    const sb = bearingAlong(p.pts, true);
+    if (cur) {
+      const turn = turnAngle(bearingAlong(cur.pts, false), sb);
+      const same = !lab.crossing && !cur.crossing && (lab.name
+        ? lab.name === cur.name
+        : !cur.name && lab.label === cur.label && Math.abs(turn) < SAME_ROAD_TURN);
+      if (same) { cur.length += p.L; cur.pts.push(...p.pts.slice(1)); continue; }
+      steps.push({ ...lab, turn, along: p.along, length: p.L, pts: p.pts.slice() });
+    } else {
+      steps.push({ ...lab, turn: 0, along: 0, length: p.L, pts: p.pts.slice(), bearing: sb });
+    }
+  }
+
+  // Fold short connectors (and straight-through crossings) into the following step, keeping the net turn.
+  for (let i = steps.length - 2; i >= 1; i--) {
+    const s = steps[i], nx = steps[i + 1];
+    const fold = s.crossing ? Math.abs(s.turn) < 45 : s.length < MIN_STEP;
+    if (!fold) continue;
+    nx.turn = turnAngle(0, s.turn + nx.turn);
+    nx.along = s.along;
+    nx.length += s.length;
+    nx.pts = [...s.pts, ...nx.pts.slice(1)];
+    steps.splice(i, 1);
+  }
+  // A very short first step takes the label of the street it leads onto.
+  if (steps.length > 1 && steps[0].length < MIN_STEP && !steps[1].crossing) {
+    const [a, b] = steps;
+    steps.splice(0, 2, { ...b, turn: 0, along: 0, length: a.length + b.length, pts: [...a.pts, ...b.pts.slice(1)], bearing: a.bearing });
+  }
+  // Going straight on isn't worth an instruction when the next stretch is unnamed or short
+  // (OSM often breaks a road's name for a block); after that, neighbours may be the same street again.
+  const mergeBack = (test) => {
+    for (let i = steps.length - 1; i >= 1; i--) {
+      const s = steps[i], pv = steps[i - 1];
+      if (s.crossing || pv.crossing || !test(s, pv)) continue;
+      pv.length += s.length;
+      pv.pts.push(...s.pts.slice(1));
+      steps.splice(i, 1);
+    }
+  };
+  mergeBack((s) => Math.abs(s.turn) < 20 && (!s.name || s.length < STRAIGHT_NAMED_MIN));
+  mergeBack((s, pv) => Math.abs(s.turn) < SAME_ROAD_TURN &&
+    (s.name ? s.name === pv.name : !pv.name && s.label === pv.label));
+
+  const out = steps.map((s, i) => {
+    let text, type = 'turn';
+    if (i === 0) {
+      type = 'depart';
+      text = `Head ${CARDINALS[Math.round(s.bearing / 45) % 8]} on ${s.label}`;
+    } else if (s.crossing) {
+      type = 'cross';
+      text = Math.abs(s.turn) < 20 ? 'Cross the road' : `${turnPhrase(s.turn)} and cross the road`;
+    } else {
+      const ph = turnPhrase(s.turn);
+      text = ph === 'Continue' ? `Continue onto ${s.label}` : ph === 'Turn around' ? `Turn around and walk along ${s.label}` : `${ph} onto ${s.label}`;
+    }
+    return { type, turn: Math.round(s.turn), text, along: s.along, length: s.length, lon: s.pts[0][0], lat: s.pts[0][1] };
+  });
+  const end = coords[coords.length - 1];
+  if (end) out.push({ type: 'arrive', turn: 0, text: 'Arrive at your destination', along: total, length: 0, lon: end[0], lat: end[1] });
+  return out;
 }
 
 function route({ from, to, alpha, band }) {
