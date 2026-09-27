@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+data/raw/
+# Built by pipeline/build_graph.py (locally or in CI); not committed
+web/data/
+.DS_Store

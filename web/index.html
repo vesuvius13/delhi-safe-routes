@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Delhi Safe Routes</title>
+  <meta name="description" content="Walking directions across Delhi that favour well-lit, busy streets over isolated shortcuts. Runs entirely in your browser.">
+  <meta name="theme-color" content="#0f766e">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map" aria-label="Map of Delhi"></div>
+
+  <aside id="panel" aria-label="Route planner">
+    <div class="grip" aria-hidden="true"></div>
+    <header class="brand">
+      <img src="icon.svg" alt="" width="32" height="32">
+      <div>
+        <h1>Delhi Safe Routes</h1>
+        <p>Walking routes that favour lit, busy streets</p>
+      </div>
+    </header>
+
+    <div class="places">
+      <div class="field">
+        <span class="dot from" aria-hidden="true">A</span>
+        <input id="from" type="search" placeholder="Start: search or tap the map" autocomplete="off" aria-label="Start">
+        <button id="locate" class="icon-btn" title="Use my location" aria-label="Use my location">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="12" cy="12" r="3.5" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+        </button>
+        <ul class="suggest" role="listbox"></ul>
+      </div>
+      <div class="field">
+        <span class="dot to" aria-hidden="true">B</span>
+        <input id="to" type="search" placeholder="Destination" autocomplete="off" aria-label="Destination">
+        <button id="swap" class="icon-btn" title="Swap start and destination" aria-label="Swap start and destination">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M7 4v14m0 0-3-3m3 3 3-3M17 20V6m0 0-3 3m3-3 3 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <ul class="suggest" role="listbox"></ul>
+      </div>
+    </div>
+
+    <div class="control">
+      <span class="label">When are you walking?</span>
+      <div id="bands" class="seg" role="radiogroup" aria-label="Time of day"></div>
+    </div>
+
+    <div class="control">
+      <label class="label" for="alpha">Route preference</label>
+      <input id="alpha" type="range" min="0" max="100" value="100">
+      <div class="range-ends"><span>Shortest</span><span>Safest</span></div>
+    </div>
+
+    <div id="status" class="status" role="status">
+      <div class="bar"><div class="fill"></div></div>
+      <span class="msg">Loading Delhi street data…</span>
+    </div>
+
+    <section id="result" hidden></section>
+
+    <footer>
+      <div class="sos">
+        <a href="tel:112" class="pill danger">112 Emergency</a>
+        <a href="tel:1091" class="pill">1091 Women helpline</a>
+        <a href="tel:181" class="pill">181 Women helpline</a>
+      </div>
+      <p class="fine">Scores come from OpenStreetMap street features (road type, lighting, open shops, parks, underpasses, police stations), not crime records. The map can be incomplete or wrong. Trust your instincts. Your location never leaves this device.</p>
+      <p class="fine" id="data-info"></p>
+    </footer>
+  </aside>
+
+  <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
