@@ -1,4 +1,5 @@
 .venv/
+.mapillary_token
 __pycache__/
 data/raw/
 # Built by pipeline/build_graph.py (locally or in CI); not committed

@@ -40,7 +40,7 @@ browser: router.worker.js (A* + turn instructions) + app.js (MapLibre UI) + nav.
 | Raises risk | Lowers risk |
 |---|---|
 | Road type: paths, tracks, alleys and service roads over main roads | Places likely to be open in that band (shops, eateries, pharmacies, fuel stations, hospitals, hotels), using `opening_hours` when tagged |
-| Darkness: `lit=no`, or a low lighting prior for the road type (evening and night only) | `lit=yes` tags and mapped street lamps |
+| Darkness: `lit=no`, or a low lighting prior for the road type (evening and night only) | `lit=yes` tags, mapped street lamps, and street lights detected in Mapillary photos |
 | Share of the segment inside parks, forest, farmland, industrial land, cemeteries, construction sites | Police within 250 m |
 | Running alongside large (over 2 ha) isolated areas | Metro/rail stations within 200 m (day and evening) |
 | Underpasses and tunnels, foot overbridges at night | Inside residential or commercial areas; CCTV nearby |
@@ -52,11 +52,22 @@ This measures the **street environment**, not crime. Delhi Police doesn't publis
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 .venv/bin/python pipeline/fetch.py        # ~27 MB download
+.venv/bin/python pipeline/fetch_mapillary.py  # optional, needs a token (see below); ~1 min
 .venv/bin/python pipeline/build_graph.py  # ~10 s
 python3 -m http.server 8000 --directory web
 ```
 
 Then open http://localhost:8000.
+
+### Mapillary street lights (optional)
+
+Mapillary detects street lights in its street-level photos. With a free client token, the build uses those detections: a light seen within 25 m makes a segment count as lit, and a segment photographed densely with no light seen gets a lower lighting estimate. Segments without photos are left alone. Missing detections only count as evidence where photos exist.
+
+1. Register an app at https://www.mapillary.com/dashboard/developers (Read access) and copy the **Client Token**.
+2. Local builds: `pbpaste > .mapillary_token` (git-ignored).
+3. CI: `gh secret set MAPILLARY_TOKEN < .mapillary_token`.
+
+Coverage in Delhi is thin for now (Sept 2026): photos cover about 12% of main roads and 2% of other streets, mostly central Delhi. The weekly rebuild picks up new photos automatically. **Capturing your own walking routes with the Mapillary app, including at night, directly improves this map.**
 
 ## Deploy for free (GitHub Pages)
 
@@ -74,7 +85,7 @@ Then open http://localhost:8000.
 
 ## Known limitations
 
-- **OSM coverage is uneven.** Only about 2,100 segments are tagged `lit=yes` and about 1,500 street lamps are mapped, so lighting is mostly inferred from road type. Opening hours are usually defaulted by category. Outer Delhi (Narela, Bawana, Najafgarh) has fewer mapped shops, so scores there lean on road type.
+- **Lighting data is sparse.** Only about 2,100 segments are tagged `lit=yes`, about 1,500 street lamps are mapped, and Mapillary photos cover about 4% of walkable streets, so lighting elsewhere is inferred from road type. A detected light pole also doesn't prove the light works at night. Opening hours are usually defaulted by category. Outer Delhi (Narela, Bawana, Najafgarh) has fewer mapped shops, so scores there lean on road type.
 - Only about 14% of street segments are named in OSM (most colony lanes aren't), so directions often say "the street" or "the footpath" instead of a name.
 - Walking in both directions is assumed. Gated colonies that close at night aren't known unless tagged `access=private`.
 - The weights are priors, not yet calibrated against ground truth.
@@ -82,7 +93,8 @@ Then open http://localhost:8000.
 
 ## Roadmap
 
-- [ ] **Street-imagery lighting and activity** from Mapillary/KartaView with a CV model, to replace road-type priors
+- [x] Street lights from Mapillary detections
+- [ ] Activity (open shopfronts, people) from street imagery with a CV model
 - [ ] Night-lights raster (VIIRS) as a coarse lighting layer
 - [ ] "Was this route OK?" feedback, and calibrating weights against Safetipin audit data
 - [x] Nearest safe place right now and one-tap location sharing
@@ -91,4 +103,4 @@ Then open http://localhost:8000.
 
 ## Data and credits
 
-Street data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL), via [openstreetmap.fr extracts](http://download.openstreetmap.fr/extracts/asia/india/). Map tiles: OpenFreeMap / OpenMapTiles. Map library: MapLibre GL JS. Search: Photon by komoot.
+Street data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright) (ODbL), via [openstreetmap.fr extracts](http://download.openstreetmap.fr/extracts/asia/india/). Street-light detections © [Mapillary](https://www.mapillary.com) (CC BY-SA 4.0). Map tiles: OpenFreeMap / OpenMapTiles. Map library: MapLibre GL JS. Search: Photon by komoot.

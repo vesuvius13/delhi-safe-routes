@@ -11,7 +11,7 @@ const PLACES_MINZOOM = 12;
 const $ = (sel, root = document) => root.querySelector(sel);
 
 const dark = matchMedia('(prefers-color-scheme: dark)').matches;
-const state = { from: null, to: null, band: 0, alpha: 1, bands: [], places: [], showShortest: true, last: null };
+const state = { from: null, to: null, band: 0, alpha: 1, bands: [], places: [], showShortest: true, last: null, mapillary: false };
 
 // ------------------------------------------------------------------ map
 
@@ -138,7 +138,9 @@ worker.onmessage = ({ data }) => {
   } else if (data.type === 'ready') {
     ready = true;
     const osm = data.osm ? new Date(data.osm).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '?';
-    $('#data-info').textContent = `Street data: © OpenStreetMap contributors, updated ${osm}. ${data.edges.toLocaleString('en-IN')} street segments.`;
+    state.mapillary = data.mapillary;
+    $('#data-info').textContent = `Street data: © OpenStreetMap contributors, updated ${osm}. ${data.edges.toLocaleString('en-IN')} street segments.`
+      + (data.mapillary ? ' Street lights detected in photos: © Mapillary, CC BY-SA.' : '');
     showStatus(state.from ? '' : 'Tap the map or search to set a start point.');
     requestRoute(true);
   } else if (pending.has(data.id)) {
@@ -246,6 +248,7 @@ function resultHtml(safe, short, same) {
   const metrics = [
     ['On main roads', pct(s.main, s.distance), '%'],
     night && ['Likely well lit', pct(s.lit, s.distance), '%'],
+    night && state.mapillary && s.surveyed > 0 && ['Street lights seen in photos', pct(s.litDetected, s.distance), '%'],
     ['Within 250 m of a police station', pct(s.nearPolice, s.distance), '%'],
   ].filter(Boolean);
 
@@ -262,6 +265,7 @@ function resultHtml(safe, short, same) {
   if (night && s.darkestStretch > 150) notes.push(['', `Longest stretch that may be poorly lit: ${km(s.darkestStretch)}.`]);
   if (s.pathlike > 40) notes.push(['', `${km(s.pathlike)} on unpaved paths or tracks.`]);
   if (s.trunk > 200) notes.push(['', `${km(s.trunk)} along a highway or arterial road with fast traffic.`]);
+  if (night && state.mapillary) notes.push(['', `Street-level photos (Mapillary) cover ${pct(s.surveyed, s.distance)}% of this route; lighting elsewhere is estimated from road type.`]);
 
   return `
     <div>

@@ -111,7 +111,7 @@ async function load(base) {
 
   G = { meta, names, S, N, E, x, y, gx, gy, off, adj, grid: { minX, minY, W, H, cellCount, cellEdges },
         B: meta.bands.length, K: meta.risk_multiplier, flags: meta.flags };
-  self.postMessage({ type: 'ready', nodes: N, edges: E, built: meta.built, osm: meta.osm_timestamp });
+  self.postMessage({ type: 'ready', nodes: N, edges: E, built: meta.built, osm: meta.osm_timestamp, mapillary: !!meta.mapillary });
 }
 
 // ------------------------------------------------------------------ geometry helpers
@@ -299,7 +299,7 @@ function describe(res, band) {
   const has = (e, name) => (S.edge_flags[e] >> F[name]) & 1;
   const st = { distance: 0, riskSum: 0, main: 0, lit: 0, litConfirmed: 0, open: 0, nearPolice: 0,
                green: 0, isolatedLand: 0, alongIsolated: 0, pathlike: 0, trunk: 0, alley: 0,
-               underpasses: 0, footbridges: 0, darkestStretch: 0 };
+               underpasses: 0, footbridges: 0, darkestStretch: 0, litDetected: 0, surveyed: 0 };
   const coords = [];
   const segments = [];
   const parts = [];
@@ -315,6 +315,8 @@ function describe(res, band) {
     if (has(e, 'main_road')) st.main += L;
     if (light > 0.65) st.lit += L; // main roads, lit=yes tags, mapped lamps; not the residential prior
     if (has(e, 'lit_tag_yes')) st.litConfirmed += L;
+    if (F.lit_detected !== undefined && has(e, 'lit_detected')) st.litDetected += L;
+    if (F.surveyed !== undefined && has(e, 'surveyed')) st.surveyed += L;
     st.open += (S.edge_open[e * B + band] / G.meta.open_count_scale) * (L / Math.max(S.edge_len[e], 1));
     if (has(e, 'near_police')) st.nearPolice += L;
     if (has(e, 'inside_green')) st.green += L;

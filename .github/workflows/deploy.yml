@@ -28,6 +28,10 @@ jobs:
       - run: pip install -r requirements.txt
       - name: Download Delhi OSM extract
         run: python pipeline/fetch.py
+      - name: Download Mapillary street lights (skipped if no token secret)
+        run: python pipeline/fetch_mapillary.py
+        env:
+          MAPILLARY_TOKEN: ${{ secrets.MAPILLARY_TOKEN }}
       - name: Build safety-weighted walking graph
         run: python pipeline/build_graph.py
       - uses: actions/configure-pages@v5

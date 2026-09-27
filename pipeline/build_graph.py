@@ -178,7 +178,7 @@ def load_poly(path):
 
 # --------------------------------------------------------------------------- features
 
-def edge_features(lines, lengths, way_tags, edge_way, pois, areas):
+def edge_features(lines, lengths, way_tags, edge_way, pois, areas, mly=None):
     E = len(lines)
     tree = STRtree(lines)
     f = {}
@@ -248,6 +248,9 @@ def edge_features(lines, lengths, way_tags, edge_way, pois, areas):
     flags[lamps > 0] |= bit("lit_tag_yes")
     log(f"  {(kinds == 'lamp').sum()} street lamps -> {(lamps > 0).sum()} lit segments")
 
+    if mly is not None:
+        light = mapillary_lighting(tree, lines, lengths, light, lamps, flags, bit, mly)
+
     pi, ei = near(kinds == "cctv", sm.CCTV_RADIUS)
     cctv = np.zeros(E, np.float32)
     cctv[ei] = 1
@@ -301,6 +304,46 @@ def edge_features(lines, lengths, way_tags, edge_way, pois, areas):
     f.update(base_risk=base, light=light, underpass=underpass, footbridge=footbridge, along_isolated=along,
              near_police=police, near_station=station, populated=populated, cctv=cctv)
     return f, flags
+
+
+# --------------------------------------------------------------------------- Mapillary
+
+def load_mapillary(raw: Path):
+    """Street-light detections and photo positions (recent only), in metres; None if not fetched."""
+    lights_f, images_f = raw / "mapillary_lights.json", raw / "mapillary_images.npz"
+    if not (lights_f.exists() and images_f.exists()):
+        return None
+    cutoff = (time.time() - sm.MLY_MAX_AGE_YEARS * 365.25 * 86400) * 1000
+    lights = [l for l in json.loads(lights_f.read_text()) if (l[3] or l[2] or 0) >= cutoff]
+    im = np.load(images_f)
+    recent = im["captured_at"] >= cutoff
+    lx, ly = to_xy([l[0] for l in lights], [l[1] for l in lights])
+    ix, iy = to_xy(im["lon"][recent].astype(np.float64), im["lat"][recent].astype(np.float64))
+    log(f"  Mapillary: {len(lights)} street lights, {recent.sum()} photos from the last {sm.MLY_MAX_AGE_YEARS} years")
+    return {"lights": shapely.points(np.c_[lx, ly]), "images": shapely.points(np.c_[ix, iy])}
+
+
+def mapillary_lighting(tree, lines, lengths, light, lamps, flags, bit, mly):
+    """Raise lighting where Mapillary saw street lights; lower it where it photographed and saw none."""
+    E = len(lines)
+    _, ei = tree.query(mly["lights"], predicate="dwithin", distance=sm.MLY_LIGHT_RADIUS)
+    detected = np.bincount(ei, minlength=E) > 0
+    light = np.where(detected, np.maximum(light, sm.MLY_DETECTED_LIGHT), light)
+    flags[detected] |= bit("lit_detected")
+
+    _, ei = tree.query(mly["images"], predicate="dwithin", distance=sm.MLY_SURVEY_RADIUS)
+    photos = np.bincount(ei, minlength=E)
+    surveyed = photos >= sm.MLY_SURVEY_PER_100M * np.maximum(lengths, 20) / 100
+    surveyed |= detected  # a detection means the street was photographed
+    flags[surveyed] |= bit("surveyed")
+    dark = surveyed & ~detected & (lamps == 0) & (lengths >= sm.MLY_MIN_SURVEY_LEN)
+    light = np.where(dark, light * sm.MLY_SURVEYED_DARK, light)
+
+    km_ = lambda m: lengths[m].sum() / 1000  # noqa: E731
+    log(f"  Mapillary: lights seen on {detected.sum()} segments ({km_(detected):.0f} km); "
+        f"surveyed {surveyed.sum()} segments ({km_(surveyed):.0f} km of {lengths.sum() / 1000:.0f}); "
+        f"surveyed with no light seen {dark.sum()} ({km_(dark):.0f} km)")
+    return light
 
 
 # --------------------------------------------------------------------------- turn-by-turn labels
@@ -406,7 +449,8 @@ def main():
     log(f"  total walkable length {lengths.sum() / 1000:.0f} km")
 
     log("computing features")
-    feats, flags = edge_features(lines, lengths, [t for _, t in rd.ways], edge_way, pois, areas)
+    mly = load_mapillary(args.raw)
+    feats, flags = edge_features(lines, lengths, [t for _, t in rd.ways], edge_way, pois, areas, mly)
     risk = sm.risk_scores(feats)
     for b, (name, *_rest) in enumerate(sm.BANDS):
         r = risk[:, b]
@@ -465,6 +509,7 @@ def main():
         "risk_multiplier": sm.RISK_MULTIPLIER,
         "flags": sm.FLAGS,
         "open_count_scale": 10,
+        "mapillary": mly is not None,
         "kind_labels": kind_labels,
         "crossing_kind": kind_idx["crossing"],
         "sections": table,

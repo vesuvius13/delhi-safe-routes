@@ -71,6 +71,15 @@ OPEN_PROFILE = {
 # Distances (metres) used for feature extraction.
 POI_RADIUS = 40        # an open place within this distance puts eyes on the segment
 LAMP_RADIUS = 20
+
+# Mapillary: street lights detected in street-level photos, and where photos exist at all.
+MLY_LIGHT_RADIUS = 25        # detections are placed approximately; a bit more slack than OSM lamps
+MLY_DETECTED_LIGHT = 0.85    # a detected light pole: likely lit, though not proof it works
+MLY_SURVEY_RADIUS = 15       # photos this close to a segment count as coverage of it
+MLY_SURVEY_PER_100M = 5      # ...and it needs this many photos per 100 m to count as surveyed
+MLY_MIN_SURVEY_LEN = 40      # shorter segments are too short to judge "no light seen"
+MLY_SURVEYED_DARK = 0.75     # surveyed, yet no light seen anywhere near: scale the lighting prior down
+MLY_MAX_AGE_YEARS = 6        # ignore photos and detections older than this
 CCTV_RADIUS = 30
 POLICE_RADIUS = 250
 STATION_RADIUS = 200
@@ -105,7 +114,7 @@ FLAGS = {
     "main_road": 0, "lit_tag_yes": 1, "lit_tag_no": 2, "inside_green": 3,
     "inside_isolated_land": 4, "along_isolated": 5, "underpass": 6, "footbridge": 7,
     "near_police": 8, "near_station": 9, "pathlike": 10, "cctv": 11, "alley_service": 12,
-    "trunk": 13,
+    "trunk": 13, "lit_detected": 14, "surveyed": 15,
 }
 
 
