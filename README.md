@@ -109,7 +109,7 @@ Without `?demo`, nothing changes: the app uses real GPS.
 1. Fork or push this folder to a **public** GitHub repo (Actions minutes are free for public repos).
 2. In the repo, go to **Settings → Pages → Source: GitHub Actions**.
 3. Optionally add a `MAPILLARY_TOKEN` secret (see [Mapillary street lights](#mapillary-street-lights)).
-4. For another city, change the extract URLs in `pipeline/fetch.py` and the projection centre in `pipeline/build_graph.py`. Delhi-specific pieces in the app (search area, emergency numbers, metro hours) live in `web/app.js`, `web/index.html` and `web/safety.js`.
+4. For another city, change the extract URLs in `pipeline/fetch.py` and the projection centre (`LAT0`, `LON0`) in `pipeline/build_graph.py`. In the app, Delhi constants sit near the top of the `web/*.js` files (map centre and bounds and search area in `app.js`, the latitude used for distances in `app.js`, `nav.js`, `safety.js` and `demo.js`, metro hours in `safety.js`, the demo start point in `demo.js`), and the emergency numbers are in `web/index.html`.
 
 ## Known limitations
 
