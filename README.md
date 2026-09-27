@@ -6,6 +6,8 @@ Walking directions across all of Delhi NCT that favour well-lit, busy streets ov
 
 Routing runs **entirely in the browser**: the app downloads a 5.7 MB street graph once, and your start point, destination and location never leave your device. It's a static site, so it's free to host on GitHub Pages.
 
+**The map keeps itself up to date.** Every Monday, a GitHub Actions workflow downloads fresh OpenStreetMap and Mapillary data, rebuilds the street graph and redeploys the app. So when someone adds a street light, a shop or a new lane to OpenStreetMap, or photographs a street with Mapillary, it shows up in the app within about a week, with no manual work.
+
 ## What it does
 
 - Finds a **safer route** and the **shortest route** between two points and shows both, with the extra distance.
